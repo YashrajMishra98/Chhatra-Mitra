@@ -3,13 +3,13 @@
 YouTube RAG Chatbot — Streamlit App
 """
 
+import html
 import streamlit as st
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import PromptTemplate
-from youtube_transcript_api.proxies import GenericProxyConfig
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -132,28 +132,26 @@ def extract_video_id(url_or_id: str) -> str:
 
 @st.cache_resource(show_spinner=False)
 def build_vector_store(video_id: str, language: str, api_key: str):
-    """Fetch transcript and build FAISS vector store. Cached by video_id+lang."""
+    """Fetch transcript and build FAISS vector store. Cached by video_id+lang+key."""
     import os
     os.environ["GOOGLE_API_KEY"] = api_key
 
-    proxy_config = GenericProxyConfig(
-        http_url="http://actual_username:actual_password@198.51.100.14:8080",
-        https_url="https://actual_username:actual_password@198.51.100.14:8080"
-    )
+    # Plain fetch — no proxy/cookies config, since a hardcoded proxy with fake
+    # credentials and a nonexistent cookies.txt file will just raise errors.
+    # If you actually need a proxy (e.g. YouTube blocks your server's IP),
+    # pass a real ProxyConfig object here instead.
+    ytt_api = YouTubeTranscriptApi()
+    fetched = ytt_api.fetch(video_id, languages=[language])
 
-    # 2. Instantiate API with the proxy configuration
-    ytt_api = YouTubeTranscriptApi(cookies='cookies.txt')
-    
-    # 3. Fetch transcript using the new v1.0.0+ syntax
-    transcript_list = ytt_api.fetch(video_id, languages=[language])
-    
-    # The new .fetch() method returns a list of dictionaries
-    transcript = " ".join(chunk["text"] for chunk in transcript_list)
+    # In youtube-transcript-api v1.0+, fetch() returns a FetchedTranscript
+    # whose items are FetchedTranscriptSnippet objects — use .text, not
+    # dict-style indexing.
+    transcript = " ".join(snippet.text for snippet in fetched)
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = splitter.create_documents([transcript])
 
-    embeddings = GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
     vector_store = FAISS.from_documents(chunks, embeddings)
     return vector_store, len(chunks), transcript[:300]
 
@@ -240,9 +238,9 @@ if load_btn:
     elif not video_input:
         st.error("Please enter a YouTube URL or video ID.")
     else:
-        video_id = extract_video_id(video_input)
-        with st.spinner("Fetching transcript and building index…"):
-            try:
+        try:
+            video_id = extract_video_id(video_input)
+            with st.spinner("Fetching transcript and building index…"):
                 vs, num_chunks, preview = build_vector_store(video_id, language, api_key)
                 st.session_state.vector_store = vs
                 st.session_state.video_loaded = True
@@ -253,26 +251,30 @@ if load_btn:
                 )
                 with st.expander("Transcript preview"):
                     st.write(preview + " …")
-            except TranscriptsDisabled:
-                st.error("No captions available for this video.")
-            except Exception as e:
-                st.error(f"Error: {e}")
+        except ValueError as e:
+            st.error(str(e))
+        except TranscriptsDisabled:
+            st.error("No captions available for this video.")
+        except Exception as e:
+            st.error(f"Error: {e}")
 
 # Chat area
 if st.session_state.video_loaded:
     st.divider()
     st.subheader("💬 Chat with the video")
 
-    # Render history
+    # Render history (escape user/model text so it can't break out of the
+    # bubble markup or inject arbitrary HTML/JS)
     for msg in st.session_state.chat_history:
+        safe_content = html.escape(msg["content"])
         if msg["role"] == "user":
             st.markdown(
-                f'<div class="user-bubble"><div class="bubble-label">You</div>{msg["content"]}</div>',
+                f'<div class="user-bubble"><div class="bubble-label">You</div>{safe_content}</div>',
                 unsafe_allow_html=True,
             )
         else:
             st.markdown(
-                f'<div class="assistant-bubble"><div class="bubble-label">Assistant</div>{msg["content"]}</div>',
+                f'<div class="assistant-bubble"><div class="bubble-label">Assistant</div>{safe_content}</div>',
                 unsafe_allow_html=True,
             )
 
