@@ -135,9 +135,21 @@ def build_vector_store(video_id: str, language: str, api_key: str):
     import os
     os.environ["GOOGLE_API_KEY"] = api_key
 
-    ytt_api = YouTubeTranscriptApi()
-    transcript_list = ytt_api.fetch(video_id, languages=[language])
-    transcript = " ".join(chunk.text for chunk in transcript_list)
+    # Define proxy infrastructure to bypass upstream rate-limiting/IP blocks
+    proxies = {
+        "http": "http://username:password@proxy_ip:port",
+        "https": "https://username:password@proxy_ip:port"
+    }
+
+    # Execute extraction with proxy routing. If using cookies, replace proxies=proxies with cookies='cookies.txt'
+    transcript_list = YouTubeTranscriptApi.get_transcript(
+        video_id, 
+        languages=[language], 
+        proxies=proxies
+    )
+    
+    # Process transcript payload (API returns a list of dictionaries)
+    transcript = " ".join(chunk["text"] for chunk in transcript_list)
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = splitter.create_documents([transcript])
