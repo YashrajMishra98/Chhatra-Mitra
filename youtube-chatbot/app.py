@@ -136,15 +136,13 @@ def build_vector_store(video_id: str, language: str, api_key: str):
     import os
     os.environ["GOOGLE_API_KEY"] = api_key
 
-    # 1. Define proxy credentials using the new GenericProxyConfig class
-    # Replace these URLs with your actual proxy details
     proxy_config = GenericProxyConfig(
-        http_url="http://username:password@proxy_ip:port",
-        https_url="https://username:password@proxy_ip:port"
+        http_url="http://actual_username:actual_password@198.51.100.14:8080",
+        https_url="https://actual_username:actual_password@198.51.100.14:8080"
     )
 
     # 2. Instantiate API with the proxy configuration
-    ytt_api = YouTubeTranscriptApi(proxy_config=proxy_config)
+    ytt_api = YouTubeTranscriptApi(cookies='cookies.txt')
     
     # 3. Fetch transcript using the new v1.0.0+ syntax
     transcript_list = ytt_api.fetch(video_id, languages=[language])
