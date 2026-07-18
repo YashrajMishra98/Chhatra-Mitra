@@ -9,6 +9,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import PromptTemplate
+from youtube_transcript_api.proxies import GenericProxyConfig
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -135,20 +136,20 @@ def build_vector_store(video_id: str, language: str, api_key: str):
     import os
     os.environ["GOOGLE_API_KEY"] = api_key
 
-    # Define proxy infrastructure to bypass upstream rate-limiting/IP blocks
-    proxies = {
-        "http": "http://username:password@proxy_ip:port",
-        "https": "https://username:password@proxy_ip:port"
-    }
-
-    # Execute extraction with proxy routing. If using cookies, replace proxies=proxies with cookies='cookies.txt'
-    transcript_list = YouTubeTranscriptApi.get_transcript(
-        video_id, 
-        languages=[language], 
-        proxies=proxies
+    # 1. Define proxy credentials using the new GenericProxyConfig class
+    # Replace these URLs with your actual proxy details
+    proxy_config = GenericProxyConfig(
+        http_url="http://username:password@proxy_ip:port",
+        https_url="https://username:password@proxy_ip:port"
     )
+
+    # 2. Instantiate API with the proxy configuration
+    ytt_api = YouTubeTranscriptApi(proxy_config=proxy_config)
     
-    # Process transcript payload (API returns a list of dictionaries)
+    # 3. Fetch transcript using the new v1.0.0+ syntax
+    transcript_list = ytt_api.fetch(video_id, languages=[language])
+    
+    # The new .fetch() method returns a list of dictionaries
     transcript = " ".join(chunk["text"] for chunk in transcript_list)
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
