@@ -78,13 +78,55 @@ if "video_title" not in st.session_state:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def extract_video_id(url_or_id: str) -> str:
-    """Accept full YouTube URLs or bare video IDs."""
+    """Accept standard, short, shorts, live YouTube URLs or bare video IDs."""
+
+    from urllib.parse import urlparse, parse_qs
+
     url_or_id = url_or_id.strip()
-    for marker in ["v=", "youtu.be/", "shorts/"]:
-        if marker in url_or_id:
-            part = url_or_id.split(marker)[-1]
-            return part.split("&")[0].split("?")[0]
-    return url_or_id  # assume it's already a bare ID
+
+    # Handle bare video ID
+    if (
+        len(url_or_id) == 11
+        and "/" not in url_or_id
+        and "?" not in url_or_id
+    ):
+        return url_or_id
+
+    parsed = urlparse(url_or_id)
+
+    hostname = (parsed.hostname or "").lower()
+
+    # youtu.be/VIDEO_ID
+    if hostname in ["youtu.be", "www.youtu.be"]:
+        return parsed.path.strip("/").split("/")[0]
+
+    # youtube.com/watch?v=VIDEO_ID
+    if hostname in [
+        "youtube.com",
+        "www.youtube.com",
+        "m.youtube.com",
+        "music.youtube.com",
+    ]:
+        if parsed.path == "/watch":
+            video_id = parse_qs(parsed.query).get("v")
+            if video_id:
+                return video_id[0]
+
+        # youtube.com/live/VIDEO_ID
+        if parsed.path.startswith("/live/"):
+            return parsed.path.split("/live/")[1].split("/")[0]
+
+        # youtube.com/shorts/VIDEO_ID
+        if parsed.path.startswith("/shorts/"):
+            return parsed.path.split("/shorts/")[1].split("/")[0]
+
+        # youtube.com/embed/VIDEO_ID
+        if parsed.path.startswith("/embed/"):
+            return parsed.path.split("/embed/")[1].split("/")[0]
+
+    raise ValueError(
+        "Could not extract a valid YouTube video ID from the provided URL."
+    )
 
 
 @st.cache_resource(show_spinner=False)
